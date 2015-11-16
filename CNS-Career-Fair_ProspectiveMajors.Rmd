@@ -1,0 +1,197 @@
+---
+title: "CNS Career Fair ‘15"
+author: "Hunter Ratliff"
+date: "October 19, 2015"
+output: html_document
+---
+
+# Prepare data
+First, we'll list the required packages. For space, I used `sapply` instead of the traditional `require("package.name")`. 
+
+```{r global_options, include=FALSE}
+require(knitr)
+
+## Sets output for figures
+knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.path='Figures/',
+                      echo=TRUE, warning=FALSE, message=FALSE, fig.align='center')
+```
+
+These are the required packages:   
+```{r LOAD | Packs}
+sapply(c("ggplot2", "dplyr", "reshape2", "magrittr", "stringi", 
+         "tidyr", "reshape2", "ggthemes", "RCurl"), require, character.only=TRUE) 
+
+
+source("~/Github/Citations/Citation Function.R")
+```
+
+## Load data   
+   
+Next, we'll read in the data from [this Google Sheet](https://docs.google.com/spreadsheets/d/1h0hJecODfuANmDvlGavfxb0ovWiuZporNAkR2jJZAeU/pub). I pulled this data from a PDF file on [The College Of Natural Sciences website](https://cns.utexas.edu/images/CNS/F15_Tech_And_Sci_Registration.pdf), and did a few basic transformations in Google Sheets.
+
+```{r LOAD | data}
+## Read the Google Sheet data as a CSV
+url <- getURL(paste0("https://docs.google.com/spreadsheets/d/",
+               "1h0hJecODfuANmDvlGavfxb0ovWiuZporNAkR2jJZAeU",
+               "/pub?output=csv"))
+fair <- read.csv(textConnection(url))
+```
+
+```{r BUILD | data frame}
+# Melted version
+df <- melt(fair, id.vars = 3, measure.vars = c(6:16))
+df <- filter(df, !is.na(value), value != "NA")
+df <- rename(df, Major=variable)
+
+# Make a pretty data frame
+Fair <- fair[1:nrow(fair), 2:4]
+
+# Add the two opening types 
+Fair$FullTime <- grepl(pattern = "FT",     fair$Position.Types)
+Fair$Intern   <- grepl(pattern = "Intern", fair$Position.Types)
+
+# Add degrees desired
+Fair$Certificate <- grepl("Cert", fair$Degrees.Sought)
+Fair$BS          <- grepl("BS", fair$Degrees.Sought)
+Fair$BA          <- grepl("BA", fair$Degrees.Sought)
+Fair$MS          <- grepl("MS", fair$Degrees.Sought)
+Fair$Ph.D        <- grepl("Ph.D", fair$Degrees.Sought)
+
+# Join with table that has the CSV column expanded
+Fair <- left_join(Fair, df)
+
+# Make categories
+Fair$value[Fair$value=="CS"]    <- "CS"
+
+Fair$value[Fair$value=="Stats"] <- "Maths"
+Fair$value[Fair$value=="Math"]  <- "Maths"
+
+Fair$value[Fair$value=="Chem"]     <- "NatSci"
+Fair$value[Fair$value=="Bio"]      <- "NatSci"
+Fair$value[Fair$value=="Biochem"]  <- "NatSci"
+Fair$value[Fair$value=="Physics"]  <- "NatSci"
+  
+Fair$value[Fair$value=="EnviroSci"]      <- "OtherSci"
+Fair$value[Fair$value=="Astronomy"]      <- "OtherSci"
+Fair$value[Fair$value=="HDFS"]           <- "OtherSci"
+Fair$value[Fair$value=="Public Health"]  <- "OtherSci"
+
+# Rename to make new category
+Fair <- rename(Fair, Catergory=value)
+Fair$Catergory[grepl("Math", Fair$Catergory)] <- "Maths"
+```
+
+## Plots
+
+With the data frame loaded, we can take a look at some of the high level statitisics
+
+### Plot #1
+
+```{r Jobs_By_Major01}
+ggplot(Fair) +
+  geom_histogram(aes(x=Catergory, fill=Major)) +
+  coord_flip() + theme_fivethirtyeight() +
+  scale_fill_brewer(palette = "Spectral") +
+  # guides(color=F) +
+  labs(x="Majors", y="Number of Organizations",
+       title="Career Fair - College of Natural Science,\nProspective Jobs by Major (2015)") 
+citation()
+```
+
+Clearly not a bad time to be doing Computer Science or Math! Also shows how much we value Public Health :(
+
+<br><br><hr>
+
+### Plot #2
+
+```{r Jobs_By_Major02}
+ggplot(data = Fair) + 
+  geom_jitter(aes(x=abbreviate(Organization.Name), y=Major, color=Catergory))  + 
+  theme_fivethirtyeight() + coord_flip() +
+  labs(x="Majors", y="Number of Organizations",
+       title="Career Fair - College of Natural Science,\nProspective Jobs by Major (2015)") 
+citation()
+```
+
+<br><br><hr>
+
+### Plot #3
+
+```{r Jobs_By_Major03}
+melt(Fair, id.vars = c("Major", "Catergory"), measure.vars = c(6:10),
+     variable.name = "Degree") %>% filter(value) %>%
+  ggplot(aes(x=Major, y=Degree)) + 
+  geom_jitter(aes(color=Catergory)) +
+  theme_fivethirtyeight() +
+  labs(x="Majors", y="Number of Organizations",
+       title="Career Fair - College of Natural Science,\nProspective Jobs by Major (2015)") 
+citation()
+```
+
+<br><br><hr>
+
+### Plot #4
+
+```{r BUILD | Table01}
+Fair[Fair==TRUE] <- 1
+Table01 <- Fair %>%
+  melt(id.vars = c("Major", "Catergory"), measure.vars = c(6:10),
+     variable.name = "Degree") %>% 
+  group_by(Degree, Major) %>% filter(value>0) %>%
+  summarise(Openings = n()) %>%
+  ungroup() 
+```
+
+```{r Jobs_By_Major04}
+ggplot(Table01, aes(Degree, Major)) + 
+  geom_tile(aes(fill=Openings)) + 
+  theme_fivethirtyeight() + coord_flip() +
+  scale_fill_gradientn(colours = rainbow(7)) + 
+  labs(x="Degree", y="Majors",
+       title="Career Fair - College of Natural Science,\nProspective Jobs by Major (2015)") 
+citation()
+```
+
+```{r Table1, echo=FALSE}
+knitr::kable(dcast(Table01, 
+                   formula = Degree ~ Major, 
+                   fun.aggregate = sum))
+```
+   
+<br><br><hr>   
+
+  
+
+
+
+As a future note to self, I'd love to tie this data in with data from LinkedIn via [the LinkedIn API](https://developer-programs.linkedin.com/documents/job-search-api). [This guide](http://thinktostart.com/analyze-linkedin-with-r/) looks promising and should work well with the `tm` package.
+
+***
+# Contact
+
+**Hunter Ratliff**
+
+Email: HunterRatliff1@gmail.com   
+Twitter: @[HunterRatliff1](https://twitter.com/HunterRatliff1)   
+
+```
+Copyright (C) 2015 Hunter Ratliff
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+```
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
